@@ -50,6 +50,7 @@ jobs:
           git clone --depth 1 --branch v2.0.0 https://github.com/Kistler-Group/sdbus-cpp.git
           cmake -S sdbus-cpp -B sdbus-build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
             -DSDBUSCPP_SDBUS_LIB=elogind \

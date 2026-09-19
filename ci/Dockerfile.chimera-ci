@@ -1,0 +1,64 @@
+# Prebaked CI image for Noctalia on Chimera Linux (musl/x86_64).
+# Bakes toolchain + all apk deps + sdbus-c++ (elogind backend) + vendored
+# headers so per-commit builds start at `meson setup` directly.
+FROM chimeralinux/chimera:latest
+
+RUN apk update && apk add \
+      git clang mold cmake meson ninja pkgconf \
+      elogind elogind-devel \
+      wayland-devel wayland-protocols \
+      mesa-devel libepoxy-devel \
+      freetype-devel fontconfig-devel \
+      cairo-devel pango-devel harfbuzz-devel \
+      libxkbcommon-devel glib-devel \
+      libsecret-devel libsodium-devel \
+      pipewire-devel wireplumber-devel \
+      polkit-devel linux-pam linux-pam-devel \
+      curl curl-devel libwebp-devel libjxl-devel \
+      libsndfile-devel librsvg-devel \
+      libqalculate-devel libxml2-devel \
+      md4c-devel libical-devel \
+      nlohmann-json stb \
+    && apk cache clean
+
+# sdbus-c++ v2.0.0 with elogind backend (no systemd/basu on Chimera).
+RUN git clone --depth 1 --branch v2.0.0 https://github.com/Kistler-Group/sdbus-cpp.git /tmp/sdbus-cpp \
+    && cmake -S /tmp/sdbus-cpp -B /tmp/sdbus-build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_C_COMPILER=clang \
+        -DCMAKE_CXX_COMPILER=clang++ \
+        -DSDBUSCPP_SDBUS_LIB=elogind \
+        -DBUILD_TESTS=OFF \
+    && cmake --build /tmp/sdbus-build -j "$(nproc)" \
+    && cmake --install /tmp/sdbus-build \
+    && rm -rf /tmp/sdbus-cpp /tmp/sdbus-build \
+    && pkg-config --modversion sdbus-c++
+
+# tomlplusplus (single header, absent on Chimera) + .pc for Meson.
+ADD https://raw.githubusercontent.com/marzer/tomlplusplus/v3.4.0/toml.hpp /usr/include/toml++/toml.hpp
+RUN printf '%s\n' \
+      'prefix=/usr' \
+      'exec_prefix=${prefix}' \
+      'libdir=${prefix}/lib' \
+      'includedir=${prefix}/include' \
+      '' \
+      'Name: tomlplusplus' \
+      'Description: TOML library for C++ (vendored single header for Chimera CI)' \
+      'Version: 3.4.0' \
+      'Cflags: -I${includedir}' \
+      > /usr/lib/pkgconfig/tomlplusplus.pc \
+    && pkg-config --modversion tomlplusplus
+
+# stb headers (only if Chimera's stb package lacks them).
+ADD https://raw.githubusercontent.com/nothings/stb/master/stb_image_resize2.h /tmp/stb_image_resize2.h
+ADD https://raw.githubusercontent.com/nothings/stb/master/stb_image_write.h /tmp/stb_image_write.h
+RUN mkdir -p /usr/include/stb \
+    && [ -f /usr/include/stb/stb_image_resize2.h ] || cp /tmp/stb_image_resize2.h /usr/include/stb/ \
+    && [ -f /usr/include/stb/stb_image_write.h ] || cp /tmp/stb_image_write.h /usr/include/stb/ \
+    && rm -f /tmp/stb_image_resize2.h /tmp/stb_image_write.h
+
+ENV CC=clang
+ENV CXX=clang++
+# Fast linker for the final giant link.
+ENV LDFLAGS=-fuse-ld=mold

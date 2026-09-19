@@ -1,0 +1,50 @@
+name: Chimera Linux (musl) build
+
+on:
+  push:
+    branches: [main, "chimera/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on chimeralinux/chimera:latest
+    runs-on: ubuntu-latest
+    container:
+      image: chimeralinux/chimera:latest
+    steps:
+      - name: Install git for checkout
+        run: apk update && apk add git
+
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          apk update
+          apk add \
+            clang meson ninja pkgconf \
+            wayland-devel wayland-protocols \
+            mesa-devel libepoxy-devel \
+            freetype-devel fontconfig-devel \
+            cairo-devel pango-devel harfbuzz-devel \
+            libxkbcommon-devel glib-devel \
+            libsecret-devel libsodium-devel \
+            pipewire-devel wireplumber-devel \
+            polkit-devel linux-pam linux-pam-devel \
+            curl-devel libwebp-devel libjxl-devel \
+            libsndfile-devel librsvg-devel \
+            libqalculate-devel libxml2-devel \
+            md4c-devel libical-devel \
+            nlohmann-json stb
+
+      - name: Configure (release, musl)
+        run: >
+          meson setup build
+          --buildtype=release
+          -Djemalloc=disabled
+          -Dtests=disabled
+          --prefix=/usr/local
+
+      - name: Build noctalia
+        run: meson compile -C build noctalia

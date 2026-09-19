@@ -29,7 +29,7 @@ jobs:
         run: |
           apk update
           apk add \
-            clang cmake meson ninja pkgconf \
+            clang cmake make meson ninja pkgconf \
             elogind elogind-devel \
             wayland-devel wayland-protocols \
             mesa-devel libepoxy-devel \
@@ -50,6 +50,8 @@ jobs:
           git clone --depth 1 --branch v2.0.0 https://github.com/Kistler-Group/sdbus-cpp.git
           cmake -S sdbus-cpp -B sdbus-build \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
             -DSDBUSCPP_SDBUS_LIB=elogind \
             -DBUILD_TESTS=OFF
           cmake --build sdbus-build -j "$(nproc)"
@@ -57,6 +59,9 @@ jobs:
           pkg-config --modversion sdbus-c++
 
       - name: Configure (release, musl)
+        env:
+          CC: clang
+          CXX: clang++
         run: >
           meson setup build
           --buildtype=release
@@ -65,4 +70,7 @@ jobs:
           --prefix=/usr/local
 
       - name: Build noctalia
+        env:
+          CC: clang
+          CXX: clang++
         run: meson compile -C build noctalia

@@ -67,7 +67,7 @@ jobs:
             else fetch -o "$2" "$1"; fi
           }
           mkdir -p /usr/include/toml++ /usr/include/stb /usr/lib/pkgconfig
-          dl https://github.com/marzer/tomlplusplus/releases/download/v3.4.0/toml.hpp \
+          dl https://raw.githubusercontent.com/marzer/tomlplusplus/v3.4.0/toml.hpp \
             /usr/include/toml++/toml.hpp
           if [ ! -f /usr/include/stb/stb_image_resize2.h ]; then
             dl https://raw.githubusercontent.com/nothings/stb/master/stb_image_resize2.h \

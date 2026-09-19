@@ -39,7 +39,7 @@ jobs:
             libsecret-devel libsodium-devel \
             pipewire-devel wireplumber-devel \
             polkit-devel linux-pam linux-pam-devel \
-            curl-devel libwebp-devel libjxl-devel \
+            curl curl-devel libwebp-devel libjxl-devel \
             libsndfile-devel librsvg-devel \
             libqalculate-devel libxml2-devel \
             md4c-devel libical-devel \
@@ -58,6 +58,37 @@ jobs:
           cmake --build sdbus-build -j "$(nproc)"
           cmake --install sdbus-build
           pkg-config --modversion sdbus-c++
+
+      - name: Vendor tomlplusplus + stb headers (absent on Chimera)
+        run: |
+          dl() {
+            if command -v wget >/dev/null; then wget -qO "$2" "$1";
+            elif command -v curl >/dev/null; then curl -sfL -o "$2" "$1";
+            else fetch -o "$2" "$1"; fi
+          }
+          mkdir -p /usr/include/toml++ /usr/include/stb /usr/lib/pkgconfig
+          dl https://github.com/marzer/tomlplusplus/releases/download/v3.4.0/toml.hpp \
+            /usr/include/toml++/toml.hpp
+          if [ ! -f /usr/include/stb/stb_image_resize2.h ]; then
+            dl https://raw.githubusercontent.com/nothings/stb/master/stb_image_resize2.h \
+              /usr/include/stb/stb_image_resize2.h
+          fi
+          if [ ! -f /usr/include/stb/stb_image_write.h ]; then
+            dl https://raw.githubusercontent.com/nothings/stb/master/stb_image_write.h \
+              /usr/include/stb/stb_image_write.h
+          fi
+          printf '%s\n' \
+            'prefix=/usr' \
+            'exec_prefix=${prefix}' \
+            'libdir=${prefix}/lib' \
+            'includedir=${prefix}/include' \
+            '' \
+            'Name: tomlplusplus' \
+            'Description: TOML library for C++ (vendored single header for Chimera CI)' \
+            'Version: 3.4.0' \
+            'Cflags: -I${includedir}' \
+            > /usr/lib/pkgconfig/tomlplusplus.pc
+          pkg-config --modversion tomlplusplus
 
       - name: Configure (release, musl)
         env:

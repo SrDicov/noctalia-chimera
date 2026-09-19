@@ -41,6 +41,10 @@ jobs:
       - name: Package install tree
         run: |
           DESTDIR="$PWD/pkg" meson install -C build --no-rebuild
+          # Bundle source-built sdbus-c++ (not in any Chimera repo) so the
+          # tarball is self-contained on a fresh system.
+          mkdir -p pkg/usr/local/lib
+          cp -P /usr/lib/libsdbus-c++.so* pkg/usr/local/lib/
           tar -czf noctalia-chimera-x86_64.tar.gz -C pkg usr
           ls -lh noctalia-chimera-x86_64.tar.gz
 

@@ -52,7 +52,7 @@ jobs:
           API="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY"
           AUTH="Authorization: Bearer $GITHUB_TOKEN"
           # Delete previous release with same tag if re-run.
-          OLD_ID=$(curl -sf -H "$AUTH" "$API/releases/tags/$TAG" | jq -r .id // empty)
+          OLD_ID=$(curl -sf -H "$AUTH" "$API/releases/tags/$TAG" | jq -r '.id // empty')
           if [ -n "$OLD_ID" ]; then
             curl -sf -X DELETE -H "$AUTH" "$API/releases/$OLD_ID" > /dev/null
             git push origin ":refs/tags/$TAG" 2>/dev/null || true
@@ -60,7 +60,7 @@ jobs:
           REL_JSON=$(curl -sf -H "$AUTH" -H "Accept: application/vnd.github+json" \
             -d "{\"tag_name\":\"$TAG\",\"name\":\"Chimera musl build $TAG\",\"body\":\"Automated Chimera Linux (musl/x86_64) build of noctalia. Unpack at / .\"}" \
             "$API/releases")
-          UPLOAD_URL=$(echo "$REL_JSON" | jq -r .upload_url | sed 's/{.*//')
+          UPLOAD_URL=$(echo "$REL_JSON" | jq -r '.upload_url' | sed 's/{.*//')
           curl -sf -H "$AUTH" -H "Content-Type: application/gzip" \
             --data-binary @noctalia-chimera-x86_64.tar.gz \
             "$UPLOAD_URL?name=noctalia-chimera-x86_64.tar.gz"

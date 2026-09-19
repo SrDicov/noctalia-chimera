@@ -29,7 +29,8 @@ jobs:
         run: |
           apk update
           apk add \
-            clang meson ninja pkgconf \
+            clang cmake meson ninja pkgconf \
+            elogind elogind-devel \
             wayland-devel wayland-protocols \
             mesa-devel libepoxy-devel \
             freetype-devel fontconfig-devel \
@@ -43,6 +44,17 @@ jobs:
             libqalculate-devel libxml2-devel \
             md4c-devel libical-devel \
             nlohmann-json stb
+
+      - name: Build and install sdbus-c++ (elogind backend)
+        run: |
+          git clone --depth 1 --branch v2.0.0 https://github.com/Kistler-Group/sdbus-cpp.git
+          cmake -S sdbus-cpp -B sdbus-build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSDBUSCPP_SDBUS_LIB=elogind \
+            -DBUILD_TESTS=OFF
+          cmake --build sdbus-build -j "$(nproc)"
+          cmake --install sdbus-build
+          pkg-config --modversion sdbus-c++
 
       - name: Configure (release, musl)
         run: >

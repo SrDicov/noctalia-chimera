@@ -17,7 +17,12 @@ jobs:
       - name: Install git for checkout
         run: apk update && apk add git
 
-      - uses: actions/checkout@v4
+      - name: Checkout sources (git, no Node in container)
+        run: |
+          git init .
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          git fetch --depth 1 origin "$GITHUB_SHA"
+          git checkout "$GITHUB_SHA"
 
       - name: Install build dependencies
         run: |

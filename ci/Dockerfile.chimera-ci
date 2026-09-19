@@ -4,7 +4,7 @@
 FROM chimeralinux/chimera:latest
 
 RUN apk update && apk add \
-      git clang mold cmake meson ninja pkgconf tar \
+      git clang mold cmake meson ninja pkgconf libarchive-progs \
       elogind elogind-devel \
       wayland-devel wayland-protocols \
       mesa-devel libepoxy-devel \

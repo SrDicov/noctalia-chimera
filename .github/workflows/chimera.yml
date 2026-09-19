@@ -16,8 +16,8 @@ jobs:
     container:
       image: ghcr.io/srdicov/noctalia-chimera-ci:latest
     steps:
-      - name: Install git + jq for checkout/upload
-        run: apk update && apk add git jq
+      - name: Install git + jq + tar for checkout/upload
+        run: apk update && apk add git jq tar
 
       - name: Checkout sources (git, no Node in container)
         run: |

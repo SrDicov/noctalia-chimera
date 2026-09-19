@@ -19,6 +19,7 @@ jobs:
 
       - name: Checkout sources (git, no Node in container)
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git init .
           git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
           git fetch --depth 1 origin "$GITHUB_SHA"

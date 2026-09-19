@@ -404,7 +404,8 @@ _wlr_ls_h = custom_target('wlr-layer-shell-unstable-v1-client-header',
   output:  'wlr-layer-shell-unstable-v1-client-protocol.h',
   command: [
     'sh', '-c',
-    '"$1" client-header "$2" "$3" && sed -i s/namespace/name_space/g "$3"',
+    # Portable in-place edit (BSD sed on Chimera/musl needs -i ''; tmp+mv works everywhere).
+    '"$1" client-header "$2" "$3" && sed s/namespace/name_space/g "$3" > "$3.tmp" && mv "$3.tmp" "$3"',
     '_', wayland_scanner.full_path(), '@INPUT@', '@OUTPUT@',
   ],
 )

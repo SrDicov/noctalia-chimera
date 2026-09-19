@@ -1,10 +1,14 @@
 #include "compositors/labwc/labwc_workspace_backend.h"
 
+#include "core/log.h"
+
 #include <algorithm>
 #include <cctype>
 #include <unordered_set>
 
 namespace {
+
+  constexpr Logger kLog("workspace_labwc");
 
   [[nodiscard]] std::optional<std::size_t> parseLeadingNumber(const std::string& value) {
     if (value.empty() || !std::isdigit(static_cast<unsigned char>(value.front()))) {
@@ -62,7 +66,7 @@ std::string LabwcWorkspaceBackend::activeWorkspaceKey(const std::vector<Workspac
   return workspaces.empty() ? std::string{} : workspaceKeyFor(workspaces.front(), 0);
 }
 
-bool LabwcWorkspaceBackend::sync() {
+bool LabwcWorkspaceBackend::sync() const {
   if (!m_workspacesProvider || !m_toplevelsProvider) {
     return false;
   }
@@ -73,6 +77,12 @@ bool LabwcWorkspaceBackend::sync() {
   std::unordered_map<std::uintptr_t, TrackedWindow> next;
   m_toplevelsProvider([&](const WlrToplevelSnapshot& toplevel) {
     if (toplevel.handle == nullptr) {
+      return;
+    }
+    // labwc unmaps views on hidden desktops: only toplevels currently on an
+    // output are visible. Windows without an output (hidden desktop,
+    // unmapped) must not count as occupying the active workspace.
+    if (toplevel.output == nullptr) {
       return;
     }
 
@@ -101,6 +111,7 @@ bool LabwcWorkspaceBackend::sync() {
     return false;
   }
   m_windows = std::move(next);
+  kLog.debug("sync: activeKey={} trackedWindows={}", activeKey, m_windows.size());
   return true;
 }
 

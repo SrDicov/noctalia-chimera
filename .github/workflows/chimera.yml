@@ -9,13 +9,15 @@ on:
 
 jobs:
   build:
-    name: Build on chimeralinux/chimera:latest
+    name: Build on prebaked Chimera CI image
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     container:
-      image: chimeralinux/chimera:latest
+      image: ghcr.io/srdicov/noctalia-chimera-ci:latest
     steps:
-      - name: Install git for checkout
-        run: apk update && apk add git
+      - name: Install git + jq for checkout/upload
+        run: apk update && apk add git jq
 
       - name: Checkout sources (git, no Node in container)
         run: |
@@ -25,75 +27,7 @@ jobs:
           git fetch --depth 1 origin "$GITHUB_SHA"
           git checkout "$GITHUB_SHA"
 
-      - name: Install build dependencies
-        run: |
-          apk update
-          apk add \
-            clang cmake meson ninja pkgconf \
-            elogind elogind-devel \
-            wayland-devel wayland-protocols \
-            mesa-devel libepoxy-devel \
-            freetype-devel fontconfig-devel \
-            cairo-devel pango-devel harfbuzz-devel \
-            libxkbcommon-devel glib-devel \
-            libsecret-devel libsodium-devel \
-            pipewire-devel wireplumber-devel \
-            polkit-devel linux-pam linux-pam-devel \
-            curl curl-devel libwebp-devel libjxl-devel \
-            libsndfile-devel librsvg-devel \
-            libqalculate-devel libxml2-devel \
-            md4c-devel libical-devel \
-            nlohmann-json stb
-
-      - name: Build and install sdbus-c++ (elogind backend)
-        run: |
-          git clone --depth 1 --branch v2.0.0 https://github.com/Kistler-Group/sdbus-cpp.git
-          cmake -S sdbus-cpp -B sdbus-build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=/usr \
-            -DCMAKE_C_COMPILER=clang \
-            -DCMAKE_CXX_COMPILER=clang++ \
-            -DSDBUSCPP_SDBUS_LIB=elogind \
-            -DBUILD_TESTS=OFF
-          cmake --build sdbus-build -j "$(nproc)"
-          cmake --install sdbus-build
-          pkg-config --modversion sdbus-c++
-
-      - name: Vendor tomlplusplus + stb headers (absent on Chimera)
-        run: |
-          dl() {
-            if command -v wget >/dev/null; then wget -qO "$2" "$1";
-            elif command -v curl >/dev/null; then curl -sfL -o "$2" "$1";
-            else fetch -o "$2" "$1"; fi
-          }
-          mkdir -p /usr/include/toml++ /usr/include/stb /usr/lib/pkgconfig
-          dl https://raw.githubusercontent.com/marzer/tomlplusplus/v3.4.0/toml.hpp \
-            /usr/include/toml++/toml.hpp
-          if [ ! -f /usr/include/stb/stb_image_resize2.h ]; then
-            dl https://raw.githubusercontent.com/nothings/stb/master/stb_image_resize2.h \
-              /usr/include/stb/stb_image_resize2.h
-          fi
-          if [ ! -f /usr/include/stb/stb_image_write.h ]; then
-            dl https://raw.githubusercontent.com/nothings/stb/master/stb_image_write.h \
-              /usr/include/stb/stb_image_write.h
-          fi
-          printf '%s\n' \
-            'prefix=/usr' \
-            'exec_prefix=${prefix}' \
-            'libdir=${prefix}/lib' \
-            'includedir=${prefix}/include' \
-            '' \
-            'Name: tomlplusplus' \
-            'Description: TOML library for C++ (vendored single header for Chimera CI)' \
-            'Version: 3.4.0' \
-            'Cflags: -I${includedir}' \
-            > /usr/lib/pkgconfig/tomlplusplus.pc
-          pkg-config --modversion tomlplusplus
-
       - name: Configure (release, musl)
-        env:
-          CC: clang
-          CXX: clang++
         run: >
           meson setup build
           --buildtype=release
@@ -102,7 +36,32 @@ jobs:
           --prefix=/usr/local
 
       - name: Build noctalia
-        env:
-          CC: clang
-          CXX: clang++
         run: meson compile -C build noctalia
+
+      - name: Package install tree
+        run: |
+          DESTDIR="$PWD/pkg" meson install -C build --no-rebuild
+          tar -czf noctalia-chimera-x86_64.tar.gz -C pkg usr
+          ls -lh noctalia-chimera-x86_64.tar.gz
+
+      - name: Publish GitHub Release asset (REST, no JS actions in container)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="chimera-build-$(echo "$GITHUB_SHA" | cut -c1-7)"
+          API="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY"
+          AUTH="Authorization: Bearer $GITHUB_TOKEN"
+          # Delete previous release with same tag if re-run.
+          OLD_ID=$(curl -sf -H "$AUTH" "$API/releases/tags/$TAG" | jq -r .id // empty)
+          if [ -n "$OLD_ID" ]; then
+            curl -sf -X DELETE -H "$AUTH" "$API/releases/$OLD_ID" > /dev/null
+            git push origin ":refs/tags/$TAG" 2>/dev/null || true
+          fi
+          REL_JSON=$(curl -sf -H "$AUTH" -H "Accept: application/vnd.github+json" \
+            -d "{\"tag_name\":\"$TAG\",\"name\":\"Chimera musl build $TAG\",\"body\":\"Automated Chimera Linux (musl/x86_64) build of noctalia. Unpack at / .\"}" \
+            "$API/releases")
+          UPLOAD_URL=$(echo "$REL_JSON" | jq -r .upload_url | sed 's/{.*//')
+          curl -sf -H "$AUTH" -H "Content-Type: application/gzip" \
+            --data-binary @noctalia-chimera-x86_64.tar.gz \
+            "$UPLOAD_URL?name=noctalia-chimera-x86_64.tar.gz"
+          echo "Published $TAG"

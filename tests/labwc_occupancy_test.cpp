@@ -181,5 +181,68 @@ int main() {
     TEST_CHECK(isOccupied(workspaces, "2"));
   }
 
+  // 10. Closing the minimized window leaves only B tracked.
+  currentToplevels = {visible(fakeB, "app-b", "B")};
+  TEST_CHECK(backend.sync());
+  TEST_CHECK(backend.workspaceWindows().size() == 1);
+
+  // 11. Focusing B while ws3 is active rebinds it there, even though labwc
+  // keeps every output set on hidden desktops.
+  currentWorkspaces = {makeWorkspace("1", false), makeWorkspace("2", false), makeWorkspace("3", true)};
+  currentToplevels = {
+      WlrToplevelSnapshot{
+          .handle = fakeB,
+          .title = "B",
+          .appId = "app-b",
+          .output = fakeOutput,
+          .activated = true,
+          .minimized = false,
+      },
+  };
+  TEST_CHECK(backend.sync());
+  {
+    auto workspaces = currentWorkspaces;
+    backend.apply(workspaces);
+    TEST_CHECK(!isOccupied(workspaces, "1"));
+    TEST_CHECK(!isOccupied(workspaces, "2"));
+    TEST_CHECK(isOccupied(workspaces, "3"));
+    const auto windows = backend.workspaceWindows();
+    TEST_CHECK(windows.size() == 1);
+    TEST_CHECK(windows[0].workspaceKey == "3");
+  }
+
+  // 12. Transient double-active during a switch: no rebinding, no tracking
+  // of unseen windows, no spurious change.
+  static int handleD = 0;
+  auto* fakeD = reinterpret_cast<zwlr_foreign_toplevel_handle_v1*>(&handleD);
+  currentWorkspaces = {makeWorkspace("1", false), makeWorkspace("2", true), makeWorkspace("3", true)};
+  currentToplevels = {
+      WlrToplevelSnapshot{
+          .handle = fakeB,
+          .title = "B",
+          .appId = "app-b",
+          .output = fakeOutput,
+          .activated = true,
+          .minimized = false,
+      },
+      visible(fakeD, "app-d", "D"),
+  };
+  TEST_CHECK(!backend.sync());
+  TEST_CHECK(backend.workspaceWindows().size() == 1);
+  TEST_CHECK(backend.workspaceWindows()[0].workspaceKey == "3");
+
+  // 13. Back to single-active: the unseen window is assumed newly opened on
+  // the active desktop, the focused one stays bound.
+  currentWorkspaces = {makeWorkspace("1", false), makeWorkspace("2", false), makeWorkspace("3", true)};
+  TEST_CHECK(backend.sync());
+  {
+    auto workspaces = currentWorkspaces;
+    backend.apply(workspaces);
+    TEST_CHECK(isOccupied(workspaces, "3"));
+    TEST_CHECK(backend.workspaceWindows().size() == 2);
+    const auto grouped = backend.appIdsByWorkspace();
+    TEST_CHECK(grouped.at("3").size() == 2);
+  }
+
   return 0;
 }

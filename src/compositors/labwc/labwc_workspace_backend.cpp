@@ -72,47 +72,96 @@ bool LabwcWorkspaceBackend::sync() const {
   }
 
   const auto workspaces = m_workspacesProvider();
+  if (workspaces.empty()) {
+    // Transient during output/group renegotiation: never clobber tracking.
+    return false;
+  }
   const std::string activeKey = activeWorkspaceKey(workspaces);
+  if (activeKey.empty()) {
+    return false;
+  }
 
-  std::unordered_map<std::uintptr_t, TrackedWindow> next;
+  // labwc unmaps views on hidden desktops (output_leave, output == nullptr)
+  // but keeps the toplevel handle alive. Tracking must be sticky: visible
+  // toplevels belong to the active workspace, hidden ones keep their last
+  // known workspace. Only handles that vanish from the enumeration entirely
+  // (closed) are garbage-collected.
+  std::unordered_set<std::uintptr_t> seen;
+  bool changed = false;
+  std::size_t visibleCount = 0;
+  std::size_t hiddenCount = 0;
+
   m_toplevelsProvider([&](const WlrToplevelSnapshot& toplevel) {
     if (toplevel.handle == nullptr) {
       return;
     }
-    // labwc unmaps views on hidden desktops: only toplevels currently on an
-    // output are visible. Windows without an output (hidden desktop,
-    // unmapped) must not count as occupying the active workspace.
-    if (toplevel.output == nullptr) {
-      return;
-    }
-
     const auto handleKey = reinterpret_cast<std::uintptr_t>(toplevel.handle);
-    std::string workspaceKey;
-    if (!toplevel.minimized) {
-      workspaceKey = activeKey;
-    } else if (const auto it = m_windows.find(handleKey); it != m_windows.end()) {
-      workspaceKey = it->second.workspaceKey;
-    }
-    if (workspaceKey.empty()) {
+    seen.insert(handleKey);
+    const auto it = m_windows.find(handleKey);
+
+    if (toplevel.output != nullptr && !toplevel.minimized) {
+      ++visibleCount;
+      const TrackedWindow want{
+          .workspaceKey = activeKey,
+          .appId = toplevel.appId,
+          .title = toplevel.title,
+      };
+      if (it == m_windows.end() || !(it->second == want)) {
+        m_windows[handleKey] = want;
+        changed = true;
+      }
       return;
     }
 
-    next.emplace(
-        handleKey,
-        TrackedWindow{
-            .workspaceKey = std::move(workspaceKey),
-            .appId = toplevel.appId,
-            .title = toplevel.title,
-        }
-    );
+    if (toplevel.output != nullptr) {
+      // Minimized but still mapped: keep the previous workspace when known,
+      // otherwise the window still occupies the visible desktop.
+      ++visibleCount;
+      std::string key = activeKey;
+      if (it != m_windows.end() && !it->second.workspaceKey.empty()) {
+        key = it->second.workspaceKey;
+      }
+      const TrackedWindow want{
+          .workspaceKey = std::move(key),
+          .appId = toplevel.appId,
+          .title = toplevel.title,
+      };
+      if (it == m_windows.end() || !(it->second == want)) {
+        m_windows[handleKey] = want;
+        changed = true;
+      }
+      return;
+    }
+
+    ++hiddenCount;
+    if (it != m_windows.end()) {
+      // Hidden desktop or unmapped: retain occupancy, refresh metadata.
+      if (it->second.appId != toplevel.appId || it->second.title != toplevel.title) {
+        it->second.appId = toplevel.appId;
+        it->second.title = toplevel.title;
+        changed = true;
+      }
+    }
+    // A hidden toplevel never seen while visible cannot be attributed to any
+    // workspace without guessing, so it is ignored until it appears mapped.
   });
 
-  if (next == m_windows) {
-    return false;
+  for (auto it = m_windows.begin(); it != m_windows.end();) {
+    if (!seen.contains(it->first)) {
+      it = m_windows.erase(it);
+      changed = true;
+    } else {
+      ++it;
+    }
   }
-  m_windows = std::move(next);
-  kLog.debug("sync: activeKey={} trackedWindows={}", activeKey, m_windows.size());
-  return true;
+
+  if (changed) {
+    kLog.debug(
+        "sync: activeKey={} trackedWindows={} visible={} hidden={}", activeKey, m_windows.size(), visibleCount,
+        hiddenCount
+    );
+  }
+  return changed;
 }
 
 void LabwcWorkspaceBackend::apply(std::vector<Workspace>& workspaces, const std::string& /*outputName*/) const {

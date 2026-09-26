@@ -602,9 +602,8 @@ CompositorPlatform::CompositorPlatform(WaylandConnection& wayland)
         [this]() -> std::vector<Workspace> {
           return m_workspaces != nullptr ? m_workspaces->all() : std::vector<Workspace>{};
         },
-        [this](const std::function<void(const WlrToplevelSnapshot&)>& visit) {
-          m_wayland.visitWlrToplevels(visit);
-        });
+        [this](const std::function<void(const WlrToplevelSnapshot&)>& visit) { m_wayland.visitWlrToplevels(visit); }
+    );
   }
   if (auto focusedOutputBackend = createFocusedOutputBackend(*m_runtimeRegistry); focusedOutputBackend != nullptr) {
     m_focusedOutputBackends.push_back(std::move(focusedOutputBackend));

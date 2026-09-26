@@ -125,7 +125,7 @@ bool LabwcWorkspaceBackend::sync() const {
           // next sync rather than guessing.
           return;
         }
-        const TrackedWindow want{
+        TrackedWindow want{
             .workspaceKey = activeKey,
             .appId = toplevel.appId,
             .title = toplevel.title,

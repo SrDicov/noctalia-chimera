@@ -81,11 +81,17 @@ bool LabwcWorkspaceBackend::sync() const {
     return false;
   }
 
-  // labwc unmaps views on hidden desktops (output_leave, output == nullptr)
-  // but keeps the toplevel handle alive. Tracking must be sticky: visible
-  // toplevels belong to the active workspace, hidden ones keep their last
-  // known workspace. Only handles that vanish from the enumeration entirely
-  // (closed) are garbage-collected.
+  // labwc exposes no per-window workspace info and keeps the output set even
+  // for windows on hidden desktops, so a mapped window is not proof of being
+  // on the active desktop. Tracking is therefore focus-bound and sticky: the
+  // focused (activated) window is necessarily on the active desktop, so it is
+  // bound there; every other mapped window keeps its last known workspace;
+  // unseen windows are assumed newly opened on the active desktop. Only
+  // handles that vanish from the enumeration entirely (closed) are
+  // garbage-collected. During a switch the compositor can briefly report two
+  // active workspaces; rebinding is skipped then to avoid misattribution.
+  const bool singleActive = std::ranges::count(workspaces, true, &Workspace::active) == 1;
+
   std::unordered_set<std::uintptr_t> seen;
   bool changed = false;
   std::size_t visibleCount = 0;
@@ -101,13 +107,36 @@ bool LabwcWorkspaceBackend::sync() const {
 
     if (toplevel.output != nullptr && !toplevel.minimized) {
       ++visibleCount;
-      const TrackedWindow want{
-          .workspaceKey = activeKey,
-          .appId = toplevel.appId,
-          .title = toplevel.title,
-      };
-      if (it == m_windows.end() || !(it->second == want)) {
-        m_windows[handleKey] = want;
+      if (toplevel.activated && singleActive) {
+        const TrackedWindow want{
+            .workspaceKey = activeKey,
+            .appId = toplevel.appId,
+            .title = toplevel.title,
+        };
+        if (it == m_windows.end() || !(it->second == want)) {
+          m_windows[handleKey] = want;
+          changed = true;
+        }
+        return;
+      }
+      if (it == m_windows.end()) {
+        if (!singleActive) {
+          // Transient double-active with no history to confirm: wait for the
+          // next sync rather than guessing.
+          return;
+        }
+        TrackedWindow want{
+            .workspaceKey = activeKey,
+            .appId = toplevel.appId,
+            .title = toplevel.title,
+        };
+        m_windows.emplace(handleKey, std::move(want));
+        changed = true;
+        return;
+      }
+      if (it->second.appId != toplevel.appId || it->second.title != toplevel.title) {
+        it->second.appId = toplevel.appId;
+        it->second.title = toplevel.title;
         changed = true;
       }
       return;
